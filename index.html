@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>阿鹿鹿接接樂</title>
 
-  <!-- LIFF SDK（保留：抓名字用；已移除分享功能） -->
+  <!-- LIFF SDK（抓名字 + 分享成績到 LINE 用） -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
   <!-- 結算卡截圖工具 -->
@@ -275,7 +275,6 @@
     .btn.primary{ background:#111; color:#fff; }
     .btn.secondary{ background:#fff; border:1px solid #ddd; color:#111; }
 
-    /* ✅ 只留截圖提示文字 */
     #shotHint{
       font-size:12px;
       opacity:.8;
@@ -345,8 +344,9 @@
 
         <div id="finalScore">分數：0</div>
 
-        <!-- ✅ 只留截圖 -->
-        <button class="btn secondary" id="btnShot">📸 結算卡一鍵截圖存相簿</button>
+        <!-- ✅ 保留「分享成績到 LINE」＋ 截圖改成「📸 結算卡截圖」 -->
+        <button class="btn primary" id="btnShare">分享成績到 LINE</button>
+        <button class="btn secondary" id="btnShot">📸 結算卡截圖</button>
         <button class="btn secondary" id="btnRestart">重新開始</button>
 
         <div id="shotHint"></div>
@@ -380,6 +380,7 @@
     const btnRestartTop = document.getElementById("btnRestartTop");
     const btnRestart = document.getElementById("btnRestart");
     const btnShot = document.getElementById("btnShot");
+    const btnShare = document.getElementById("btnShare");
 
     const shotHintEl = document.getElementById("shotHint");
 
@@ -846,7 +847,7 @@
     }
 
     /**********************
-     *  LIFF 初始化（僅抓名字）
+     *  LIFF 初始化（抓名字）
      **********************/
     async function initLIFF(){
       try{
@@ -854,7 +855,7 @@
         inLIFF = true;
 
         if (!liff.isLoggedIn()) {
-          // 不強制登入，不影響遊玩
+          // 不強制登入，不影響遊玩；分享時若需要會提示
           return;
         }
 
@@ -874,8 +875,49 @@
     }
 
     /**********************
-     *  ✅ 純截圖：不分享、不送出
-     *  目標：跳出 iOS 存圖介面 → 使用者點「儲存到照片」
+     *  ✅ 分享成績到 LINE（文字）
+     *  需要 LIFF scope: chat_message.write（在 LINE 內開啟）
+     **********************/
+    function buildShareText(){
+      const stageText = stagePillEl ? stagePillEl.textContent : "";
+      return `🦒 阿鹿鹿接接樂 成績出爐！\n鹿粉：${playerName}\n${stageText}\n分數：${score}\n來挑戰我～`;
+    }
+
+    async function shareScoreToLINE(){
+      const text = buildShareText();
+
+      // 不是在 LINE 內：改成複製文字（不會報錯）
+      if(!window.liff || !liff.isInClient || !liff.isInClient()){
+        try{
+          await navigator.clipboard.writeText(text);
+          shotHintEl.textContent = "已複製分享文字～貼到 LINE/社群就可以！";
+        }catch(e){
+          shotHintEl.textContent = text;
+        }
+        return;
+      }
+
+      // 在 LINE 內但尚未登入：導向登入（讓 sendMessages 可用）
+      if(liff.isLoggedIn && !liff.isLoggedIn()){
+        try{
+          liff.login();
+        }catch(e){
+          shotHintEl.textContent = "目前無法登入 LIFF，請稍後再試。";
+        }
+        return;
+      }
+
+      try{
+        await liff.sendMessages([{ type:"text", text }]);
+        shotHintEl.textContent = "已送出到 LINE 聊天室 ✅";
+      }catch(e){
+        shotHintEl.textContent = "分享失敗：請確認 LIFF 權限含 chat_message.write，且於 LINE 內開啟。";
+      }
+    }
+
+    /**********************
+     *  ✅ 結算卡截圖（不使用 navigator.share）
+     *  行為：下載 + 顯示預覽（iPhone 可長按存相簿）
      **********************/
     async function captureResultCard(){
       if(typeof html2canvas !== "function"){
@@ -897,26 +939,23 @@
         }
 
         const fileName = `alulu-score-${Date.now()}.png`;
-        const file = new File([blob], fileName, { type:"image/png" });
-
-        // ✅ 使用 share sheet 只用來「存到照片」流程（不帶文字/標題，不做分享文字）
-        if(navigator.canShare && navigator.canShare({ files:[file] })){
-          try{
-            await navigator.share({ files:[file] });
-            shotHintEl.textContent = "已開啟存圖介面：請選「儲存到照片」即可存入相簿 ✅";
-            return;
-          }catch(e){
-            // 使用者取消/不支援：走備援
-          }
-        }
-
-        // ✅ 備援：顯示圖片 + 下載（iPhone 可長按存相簿）
         const url = URL.createObjectURL(blob);
+
+        // ✅ 直接觸發下載（純截圖，不走分享）
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        // ✅ 顯示預覽：iPhone 可長按「儲存到照片」
         shotHintEl.innerHTML = `
           <div style="margin-top:8px; display:flex; flex-direction:column; gap:8px; align-items:center;">
             <img src="${url}" alt="結算卡截圖" style="width:min(320px, 80vw); border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.12);" />
-            <a href="${url}" download="${fileName}" style="font-weight:900; text-decoration:none;">⬇️ 下載截圖</a>
-            <div style="font-size:12px; opacity:.75;">（iPhone：長按圖片 → 加到照片 / 儲存到相簿）</div>
+            <div style="font-size:12px; opacity:.75;">
+              已產生截圖並下載。iPhone：長按圖片 → 加到照片 / 儲存到相簿
+            </div>
           </div>
         `;
       }catch(e){
@@ -1150,6 +1189,7 @@
     btnRestartTop.addEventListener("click", resetGame);
     btnRestart.addEventListener("click", resetGame);
     btnShot.addEventListener("click", captureResultCard);
+    btnShare.addEventListener("click", shareScoreToLINE);
 
     /**********************
      *  Init
@@ -1173,4 +1213,3 @@
   </script>
 </body>
 </html>
-
