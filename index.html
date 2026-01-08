@@ -1146,7 +1146,7 @@
               score += 10;
               onCatchDiamond(px, py);
             }else if(it.kind === "bomb"){
-              score = Math.max(0, score - 25);
+              score = Math.max(0, score - 10);
               onCatchBomb(px, py);
             }else{
               if(it.kind === "apple")  score += 2;
@@ -1196,4 +1196,5 @@
   </script>
 </body>
 </html>
+
 
