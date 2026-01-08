@@ -8,12 +8,16 @@
   <!-- LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
+  <!-- 結算卡截圖工具 -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
   <style>
     :root{
       --bg1:#ffd6e7;
       --bg2:#fff4f9;
       --card:#ffffffcc;
       --text:#111;
+      --themeGlow: rgba(255,120,190,.65);
     }
     html,body{
       height:100%;
@@ -123,6 +127,12 @@
       accent-color:#111;
     }
 
+    /* Stage pill */
+    #stagePill{
+      pointer-events:auto;
+      font-weight: 900;
+    }
+
     /* Player */
     #player{
       position:absolute;
@@ -137,22 +147,20 @@
       display:flex;
       align-items:center;
       justify-content:center;
-      font-size:46px;
       user-select:none;
       -webkit-user-select:none;
       z-index:3;
       will-change:transform;
     }
 
-    /* Q彈（縮放彈跳） */
-    @keyframes squishPop{
-      0%   { transform: scale(1); }
-      18%  { transform: scale(1.12, .88); }
-      45%  { transform: scale(.92, 1.10); }
-      70%  { transform: scale(1.06, .96); }
-      100% { transform: scale(1); }
+    #playerAvatar{
+      width:66px;
+      height:66px;
+      object-fit:contain;
+      user-select:none;
+      -webkit-user-select:none;
+      pointer-events:none;
     }
-    .squish{ animation:squishPop 220ms cubic-bezier(.2,.9,.2,1); }
 
     /* Falling items */
     .item{
@@ -170,7 +178,26 @@
       z-index:2;
     }
 
-    /* Sparks */
+    /* 水果主題光暈（不影響座標） */
+    .item.fruit{
+      border-radius:16px;
+      background: rgba(255,255,255,.10);
+      outline: 2px solid rgba(255,255,255,.18);
+    }
+    .item.fruit::after{
+      content:"";
+      position:absolute;
+      inset:-8px;
+      border-radius:18px;
+      background: radial-gradient(circle at 50% 45%,
+        var(--themeGlow, rgba(255,180,220,.55)) 0%,
+        rgba(255,255,255,0) 70%);
+      filter: blur(1px);
+      opacity:.95;
+      pointer-events:none;
+    }
+
+    /* Particles */
     .spark{
       position:absolute;
       width:22px;
@@ -218,6 +245,22 @@
       gap:10px;
       text-align:center;
     }
+
+    #resultAvatarWrap{
+      display:flex;
+      justify-content:center;
+      margin-top:6px;
+      margin-bottom:4px;
+    }
+    #resultAvatar{
+      width:72px;
+      height:72px;
+      border-radius:18px;
+      object-fit:contain;
+      background:#fff;
+      box-shadow:0 8px 24px rgba(0,0,0,.12);
+    }
+
     #gameoverTitle{ font-size:28px; font-weight:900; }
     #finalScore{ font-size:20px; font-weight:800; }
 
@@ -234,7 +277,7 @@
 
     #shareHint{
       font-size:12px;
-      opacity:.75;
+      opacity:.85;
       margin-top:2px;
       word-break:break-word;
     }
@@ -270,6 +313,8 @@
       <div class="pill" id="titlePill">🦒 阿鹿鹿接接樂</div>
       <div class="pill" id="welcomePill">鹿粉你好～準備接接樂！</div>
 
+      <div class="pill small" id="stagePill">第 1 關｜莓果主題</div>
+
       <div class="pill small" id="scorePill">分數：<span id="score">0</span></div>
       <div class="pill small" id="lifePill">命：<span id="lives">3</span> ❤️</div>
 
@@ -288,17 +333,27 @@
       <button id="btnRestartTop" title="重新開始">重新開始</button>
     </div>
 
-    <div id="player" aria-label="player">🦒</div>
+    <div id="player" aria-label="player">
+      <img id="playerAvatar" alt="鹿鹿" />
+    </div>
+
     <div id="ground"></div>
 
     <!-- Game Over -->
     <div id="gameover">
       <div id="gameoverCard">
         <div id="gameoverTitle">Game Over</div>
+
+        <div id="resultAvatarWrap">
+          <img id="resultAvatar" alt="本局鹿鹿" />
+        </div>
+
         <div id="finalScore">分數：0</div>
 
         <button class="btn primary" id="btnShare">分享成績到 LINE</button>
+        <button class="btn secondary" id="btnShot">📸 結算卡截圖分享</button>
         <button class="btn secondary" id="btnRestart">重新開始</button>
+
         <div id="shareHint"></div>
 
         <div id="lb">
@@ -314,24 +369,30 @@
     /**********************
      *  設定：LIFF ID
      **********************/
-    const LIFF_ID = "2008833499-jzAWlBAJ";
+    const LIFF_ID = "2008845314-CxfyQ0o5";
 
     /**********************
      *  DOM
      **********************/
     const game = document.getElementById("game");
     const playerEl = document.getElementById("player");
+    const playerAvatarEl = document.getElementById("playerAvatar");
+    const resultAvatarEl = document.getElementById("resultAvatar");
+
     const scoreEl = document.getElementById("score");
     const livesEl = document.getElementById("lives");
     const welcomePill = document.getElementById("welcomePill");
+    const stagePillEl = document.getElementById("stagePill");
 
     const overlay = document.getElementById("gameover");
     const finalScoreEl = document.getElementById("finalScore");
     const shareHintEl = document.getElementById("shareHint");
+    const gameoverCardEl = document.getElementById("gameoverCard");
 
     const btnRestartTop = document.getElementById("btnRestartTop");
     const btnRestart = document.getElementById("btnRestart");
     const btnShare = document.getElementById("btnShare");
+    const btnShot = document.getElementById("btnShot");
 
     // 音效UI
     const btnBgmToggle = document.getElementById("btnBgmToggle");
@@ -348,6 +409,7 @@
     let playerX = vw * 0.5;
     const playerW = 78;
     const playerH = 78;
+
     const itemW = 54;
     const itemH = 54;
 
@@ -358,21 +420,72 @@
     let lastSpawn = 0;
     let spawnInterval = 900;
     let speedBase = 220;
+
     const items = [];
 
     let playerName = "鹿粉";
     let inLIFF = false;
 
-    // combo：影響泡泡音高
+    // combo：影響泡泡音高（僅在「接到鑽石」）
     let combo = 0;
     let lastGoodTs = 0;
 
-    // Q彈：水平微抖（疊在 translateX）
-    let shakeT = 0;
-    let shakeAmp = 0;
+    /**********************
+     *  鹿鹿頭貼：每次開局隨機（4 張）
+     **********************/
+    const AVATARS = [
+      "assets/win-head-1.png",
+      "assets/win-head-2.png",
+      "assets/win-head-3.png",
+      "assets/win-head-4.png",
+    ];
+    let currentAvatar = AVATARS[0];
 
-    // 粒子
-    const sparks = [];
+    function preloadAvatars(){
+      AVATARS.forEach(src => { const img = new Image(); img.src = src; });
+    }
+
+    function pickRandomAvatar(){
+      let next = currentAvatar;
+      if(AVATARS.length <= 1){
+        next = AVATARS[0];
+      }else{
+        while(next === currentAvatar){
+          next = AVATARS[Math.floor(Math.random() * AVATARS.length)];
+        }
+      }
+      currentAvatar = next;
+      playerAvatarEl.src = currentAvatar;
+      resultAvatarEl.src = currentAvatar; // 結算同步
+    }
+
+    /**********************
+     *  水果主題（關卡感）
+     **********************/
+    const THEMES = [
+      { name:"莓果主題",  bg1:"#ffd6e7", bg2:"#fff4f9", glow:"rgba(255,120,190,.65)" },
+      { name:"香蕉主題",  bg1:"#fff1b8", bg2:"#fffbe6", glow:"rgba(255,205,40,.65)" },
+      { name:"葡萄主題",  bg1:"#e7d7ff", bg2:"#f6f0ff", glow:"rgba(160,110,255,.60)" },
+      { name:"清爽薄荷",  bg1:"#c9fff1", bg2:"#eafffa", glow:"rgba(80,220,190,.55)" },
+    ];
+
+    let stageIndex = 0;
+    let stageNum = 1;
+    const STAGE_DURATION = 18; // 每關秒數
+    let stageTimer = 0;
+
+    function applyTheme(idx){
+      const t = THEMES[idx % THEMES.length];
+      document.documentElement.style.setProperty("--bg1", t.bg1);
+      document.documentElement.style.setProperty("--bg2", t.bg2);
+      document.documentElement.style.setProperty("--themeGlow", t.glow);
+      stagePillEl.textContent = `第 ${stageNum} 關｜${t.name}`;
+    }
+    function nextStage(){
+      stageIndex = (stageIndex + 1) % THEMES.length;
+      stageNum += 1;
+      applyTheme(stageIndex);
+    }
 
     /**********************
      *  工具
@@ -399,13 +512,10 @@
     function ensureAudio(){
       if(audioCtx) return;
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
       audioState.sfxGain = audioCtx.createGain();
       audioState.bgmGain = audioCtx.createGain();
-
       audioState.sfxGain.gain.value = audioState.sfxOn ? audioState.sfxVol : 0;
       audioState.bgmGain.gain.value = audioState.bgmOn ? audioState.bgmVol : 0;
-
       audioState.sfxGain.connect(audioCtx.destination);
       audioState.bgmGain.connect(audioCtx.destination);
     }
@@ -418,7 +528,6 @@
       audioState.bgmGain.gain.value = audioState.bgmOn ? audioState.bgmVol : 0;
     }
 
-    // 泡泡「啵」
     function playPop(baseFreq){
       if(!audioState.sfxOn) return;
       ensureAudio();
@@ -452,13 +561,14 @@
       gain2.gain.setValueAtTime(0.0001, t + 0.02);
       gain2.gain.exponentialRampToValueAtTime(0.35, t + 0.03);
       gain2.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+
       osc2.connect(gain2);
       gain2.connect(audioState.sfxGain);
+
       osc2.start(t + 0.02);
       osc2.stop(t + 0.14);
     }
 
-    // 失誤音「噗」
     function playThunk(){
       if(!audioState.sfxOn) return;
       ensureAudio();
@@ -483,7 +593,7 @@
       osc.stop(t + 0.12);
     }
 
-    // 輕快休閒BGM（節奏感更明顯但不吵）
+    // 輕快休閒BGM
     const bgm = {
       bpm: 128,
       melody: [64, 67, 69, 71, 72, 71, 69, 67, 64, 67, 72, 74, 72, 71, 69, 67],
@@ -522,18 +632,13 @@
       const now = audioCtx.currentTime;
       const startAt = now + 0.005;
 
-      // 旋律（峰值較低避免吵）
       playNote(midiToFreq(bgm.melody[step]), stepDur * 0.85, "sine", audioState.bgmGain, startAt, 0.42);
+      playNote(midiToFreq(bgm.bass[step]),   stepDur * 0.55, "triangle", audioState.bgmGain, startAt, 0.36);
 
-      // 低音：節拍走路感
-      playNote(midiToFreq(bgm.bass[step]), stepDur * 0.55, "triangle", audioState.bgmGain, startAt, 0.36);
-
-      // 輕拍點綴
       if(step % 2 === 0){
         playNote(1800, stepDur * 0.18, "square", audioState.bgmGain, startAt + 0.002, 0.12);
       }
 
-      // 和弦墊底
       if(step % 4 === 0){
         const root = bgm.chord[(step/4) % 4];
         [root, root+4, root+7].forEach((mm, idx)=>{
@@ -560,23 +665,115 @@
     }
 
     /**********************
-     *  物品：💎 / 🍎
+     *  粒子（不影響座標）
+     **********************/
+    const sparks = []; // {el,x,y,vx,vy,life,rot,vr,opacity,type}
+
+    function spawnSparks(cx, cy, type = "star"){
+      const count = (type === "star") ? 7 : 12;
+      const glyphs = (type === "star")
+        ? ["✨","⭐️","💫"]
+        : ["💥","🔥","✨","✴️"];
+
+      for(let i=0;i<count;i++){
+        const el = document.createElement("div");
+        el.className = "spark";
+        el.textContent = glyphs[Math.floor(rand(0, glyphs.length))];
+
+        const ang = (type === "star")
+          ? rand(-Math.PI*0.95, -Math.PI*0.05)
+          : rand(0, Math.PI*2);
+
+        const spd = (type === "star") ? rand(140, 320) : rand(220, 520);
+        const vx = Math.cos(ang) * spd;
+        const vy = Math.sin(ang) * spd;
+
+        const rot = rand(-180, 180);
+        const vr  = rand(-520, 520);
+
+        const x = cx + rand(-10, 10);
+        const y = cy + rand(-8, 8);
+
+        el.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+        game.appendChild(el);
+
+        sparks.push({
+          el, x, y, vx, vy,
+          life: (type === "star") ? rand(0.45, 0.75) : rand(0.25, 0.55),
+          rot, vr,
+          opacity: 1,
+          type
+        });
+      }
+    }
+
+    function updateSparks(dt){
+      for(let i=sparks.length-1;i>=0;i--){
+        const p = sparks[i];
+        p.life -= dt;
+
+        if(p.life <= 0){
+          if(p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
+          sparks.splice(i,1);
+          continue;
+        }
+
+        const g = (p.type === "star") ? 760 : 980;
+        const dampX = (p.type === "star") ? 0.6 : 1.2;
+        const dampY = (p.type === "star") ? 0.2 : 0.8;
+
+        p.vy += g * dt;
+        p.vx *= (1 - dampX*dt);
+        p.vy *= (1 - dampY*dt);
+
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.rot += p.vr * dt;
+
+        const maxLife = (p.type === "star") ? 0.75 : 0.55;
+        p.opacity = Math.max(0, p.life / maxLife);
+
+        p.el.style.opacity = String(p.opacity);
+        p.el.style.transform = `translate(${p.x}px, ${p.y}px) rotate(${p.rot}deg) scale(${0.9 + (1-p.opacity)*0.25})`;
+      }
+    }
+
+    /**********************
+     *  物品：5 種（鑽石 30%、炸彈 30%、其餘水果合計 40%）
      **********************/
     function spawnItem(){
       const el = document.createElement("div");
       el.className = "item";
 
-      const good = Math.random() < 0.55;
-      el.textContent = good ? "💎" : "🍎";
+      const r = Math.random();
+      let kind = "";
+
+      if(r < 0.30){
+        kind = "diamond";
+      }else if(r < 0.60){
+        kind = "bomb";
+      }else{
+        const others = ["apple","banana","grape"];
+        kind = others[Math.floor(Math.random() * others.length)];
+        el.classList.add("fruit");
+      }
+
+      const iconMap = {
+        diamond: "💎",
+        bomb: "💣",
+        apple: "🍎",
+        banana: "🍌",
+        grape: "🍇",
+      };
+      el.textContent = iconMap[kind];
 
       const x = rand(12, vw - itemW - 12);
       const y = -60;
-
       el.style.transform = `translate(${x}px, ${y}px)`;
       game.appendChild(el);
 
       const speed = speedBase + rand(-30, 90);
-      items.push({ el, x, y, speed, good });
+      items.push({ el, x, y, speed, kind });
     }
 
     /**********************
@@ -618,6 +815,11 @@
       saveLeaderboard(top);
       return top;
     }
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, m => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
+      }[m]));
+    }
     function renderLeaderboard(list){
       const box = document.getElementById("lbList");
       box.innerHTML = "";
@@ -628,14 +830,10 @@
       list.forEach((r, i)=>{
         const row = document.createElement("div");
         row.className = "lbRow";
-        row.innerHTML = `<div>${i+1}. ${escapeHtml(r.name || "鹿粉")}</div><div>${r.score}</div>`;
+        const crown = (i === 0) ? "👑 " : "";
+        row.innerHTML = `<div>${crown}${i+1}. ${escapeHtml(r.name || "鹿粉")}</div><div>${r.score}</div>`;
         box.appendChild(row);
       });
-    }
-    function escapeHtml(s){
-      return String(s).replace(/[&<>"']/g, m => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-      }[m]));
     }
 
     /**********************
@@ -667,11 +865,12 @@
     }
 
     /**********************
-     *  分享成績
+     *  分享成績（文字）
      **********************/
     function buildShareText(score){
       return `🦒 阿鹿鹿接接樂 成績出爐！\n鹿粉：${playerName}\n分數：${score}\n你也來挑戰看看～`;
     }
+
     async function shareScore(score){
       const text = buildShareText(score);
 
@@ -694,20 +893,64 @@
     }
 
     /**********************
+     *  結算卡截圖分享
+     **********************/
+    async function captureResultCard(){
+      if(typeof html2canvas !== "function"){
+        shareHintEl.textContent = "截圖工具載入失敗（html2canvas 未載入）。";
+        return;
+      }
+
+      try{
+        const canvas = await html2canvas(gameoverCardEl, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          useCORS: true
+        });
+
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png", 1.0));
+        if(!blob){
+          shareHintEl.textContent = "截圖失敗（無法輸出圖片）。";
+          return;
+        }
+
+        const file = new File([blob], `alulu-score-${Date.now()}.png`, { type:"image/png" });
+        const url = URL.createObjectURL(blob);
+
+        shareHintEl.innerHTML = `
+          <div style="margin-top:8px; display:flex; flex-direction:column; gap:8px; align-items:center;">
+            <img src="${url}" alt="結算卡截圖" style="width:min(320px, 80vw); border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.12);" />
+            <a href="${url}" download="${file.name}" style="font-weight:900; text-decoration:none;">⬇️ 下載截圖</a>
+            <div style="font-size:12px; opacity:.75;">（iPhone 可長按圖片存到相簿）</div>
+          </div>
+        `;
+
+        try{
+          if(navigator.canShare && navigator.canShare({ files:[file] })){
+            await navigator.share({
+              title: "阿鹿鹿接接樂 成績",
+              text: `我在阿鹿鹿接接樂拿到 ${score} 分！`,
+              files: [file]
+            });
+          }
+        }catch(e){
+          // 使用者取消/環境不支援：忽略
+        }
+      }catch(e){
+        shareHintEl.textContent = "截圖失敗：請再試一次。";
+      }
+    }
+
+    /**********************
      *  玩家控制：拖曳 / 觸控
+     *  （只做 translateX，不做跳動/縮放，避免回中）
      **********************/
     let dragging = false;
     let dragOffsetX = 0;
 
-    // 用 CSS 變數存基準 translateX，方便疊加 shake
     function setPlayerX(x){
       playerX = clamp(x, playerW/2 + 6, vw - playerW/2 - 6);
-      playerEl.style.setProperty("--px", `${playerX - vw/2}px`);
-      applyPlayerTransform(0);
-    }
-    function applyPlayerTransform(extraX){
-      const base = playerEl.style.getPropertyValue("--px") || "0px";
-      playerEl.style.transform = `translateX(calc(${base} + ${extraX}px))`;
+      playerEl.style.transform = `translateX(${playerX - vw/2}px)`;
     }
 
     function pointerDown(e){
@@ -735,66 +978,6 @@
     window.addEventListener("touchmove", pointerMove, {passive:false});
     window.addEventListener("touchend", pointerUp, {passive:false});
     window.addEventListener("touchcancel", pointerUp, {passive:false});
-
-    /**********************
-     *  Q彈特效：彈一下 + 震動 + 星星粒子
-     **********************/
-    function squish(){
-      playerEl.classList.remove("squish");
-      void playerEl.offsetWidth; // 觸發 reflow
-      playerEl.classList.add("squish");
-    }
-    function shake(strength=8){
-      shakeT = 0.16;
-      shakeAmp = Math.max(shakeAmp, strength);
-    }
-    function spawnSparks(cx, cy){
-      const count = 7;
-      const glyphs = ["✨","⭐️","💫"];
-      for(let i=0;i<count;i++){
-        const el = document.createElement("div");
-        el.className = "spark";
-        el.textContent = glyphs[Math.floor(rand(0, glyphs.length))];
-
-        const ang = rand(-Math.PI*0.95, -Math.PI*0.05);
-        const spd = rand(140, 320);
-        const vx = Math.cos(ang) * spd;
-        const vy = Math.sin(ang) * spd;
-
-        const rot = rand(-180, 180);
-        const vr = rand(-420, 420);
-
-        const x = cx + rand(-10, 10);
-        const y = cy + rand(-8, 8);
-
-        el.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
-        game.appendChild(el);
-
-        sparks.push({ el, x, y, vx, vy, life: rand(0.45, 0.75), rot, vr, opacity: 1 });
-      }
-    }
-    function updateSparks(dt){
-      for(let i=sparks.length-1;i>=0;i--){
-        const p = sparks[i];
-        p.life -= dt;
-        if(p.life <= 0){
-          if(p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
-          sparks.splice(i,1);
-          continue;
-        }
-        p.vy += 760 * dt;
-        p.vx *= (1 - 0.6*dt);
-        p.vy *= (1 - 0.2*dt);
-
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.rot += p.vr * dt;
-
-        p.opacity = Math.max(0, p.life / 0.75);
-        p.el.style.opacity = String(p.opacity);
-        p.el.style.transform = `translate(${p.x}px, ${p.y}px) rotate(${p.rot}deg) scale(${0.9 + (1-p.opacity)*0.2})`;
-      }
-    }
 
     /**********************
      *  音效UI
@@ -833,6 +1016,33 @@
     });
 
     /**********************
+     *  接到事件：只在「接到」時加減分
+     *  （掉地不改分數，但會扣命維持 Game Over）
+     **********************/
+    function onCatchDiamond(px, py){
+      const now = performance.now();
+      if(now - lastGoodTs < 1100) combo += 1;
+      else combo = 1;
+      lastGoodTs = now;
+
+      const freq = 360 + Math.min(18, combo) * 28;
+      playPop(freq);
+
+      spawnSparks(px + playerW/2, py + 18, "star");
+    }
+
+    function onCatchBomb(px, py){
+      combo = 0;
+      playThunk();
+      spawnSparks(px + playerW/2, py + 18, "boom");
+    }
+
+    function onCatchFruit(){
+      combo = 0;
+      playPop(460);
+    }
+
+    /**********************
      *  遊戲流程
      **********************/
     function removeItem(i){
@@ -843,7 +1053,6 @@
 
     function gameOver(){
       running = false;
-      playThunk();
 
       finalScoreEl.textContent = `分數：${score}`;
       shareHintEl.textContent = "";
@@ -855,15 +1064,8 @@
     }
 
     function resetGame(){
+      // 清物品
       for(let i=items.length-1;i>=0;i--) removeItem(i);
-
-      score = 0;
-      lives = 3;
-      combo = 0;
-      lastGoodTs = 0;
-
-      shakeT = 0;
-      shakeAmp = 0;
 
       // 清粒子
       for(let i=sparks.length-1;i>=0;i--){
@@ -872,12 +1074,25 @@
         sparks.splice(i,1);
       }
 
+      score = 0;
+      lives = 3;
+      combo = 0;
+      lastGoodTs = 0;
+
       spawnInterval = 900;
       speedBase = 220;
-
-      running = true;
       lastSpawn = 0;
 
+      // 關卡重置
+      stageIndex = 0;
+      stageNum = 1;
+      stageTimer = 0;
+      applyTheme(stageIndex);
+
+      // 本局鹿鹿頭貼
+      pickRandomAvatar();
+
+      running = true;
       overlay.style.display = "none";
       updateHUD();
 
@@ -886,75 +1101,45 @@
       setPlayerX(vw * 0.5);
     }
 
-    function onGoodCatch(px, py){
-      const now = performance.now();
-      if(now - lastGoodTs < 1100) combo += 1;
-      else combo = 1;
-      lastGoodTs = now;
-
-      // 連擊越高音高越高（限制上限避免刺耳）
-      const freq = 360 + Math.min(18, combo) * 28;
-      playPop(freq);
-
-      // Q彈 + 星星
-      squish();
-      shake(7 + Math.min(6, combo));
-      spawnSparks(px + playerW/2, py + 18);
-    }
-
-    function onBadEvent(){
-      combo = 0;
-      playThunk();
-      shake(6);
-    }
-
     function tick(ts){
       if(!tick.last) tick.last = ts;
       const dt = (ts - tick.last) / 1000;
       tick.last = ts;
 
-      // 震動（疊在 translateX）
-      if(shakeT > 0){
-        shakeT -= dt;
-        const phase = (shakeT * 55);
-        const off = Math.sin(phase) * shakeAmp * (shakeT / 0.16);
-        applyPlayerTransform(off);
-      }else{
-        if(shakeAmp !== 0){
-          shakeAmp = 0;
-          applyPlayerTransform(0);
-        }
-      }
-
-      // 粒子
       updateSparks(dt);
 
       if(running){
+        // 關卡計時（換主題）
+        stageTimer += dt;
+        if(stageTimer >= STAGE_DURATION){
+          stageTimer = 0;
+          nextStage();
+        }
+
         // 生成物品
         if(ts - lastSpawn > spawnInterval){
           spawnItem();
           lastSpawn = ts;
 
-          // 逐漸加速
+          // 逐漸加速（手感）
           spawnInterval = Math.max(380, spawnInterval - 10);
           speedBase = Math.min(520, speedBase + 2.2);
         }
 
-        // 玩家左上角座標（碰撞）
+        // 玩家矩形（碰撞）
         const px = playerX - playerW/2;
         const py = vh - 22 - playerH;
 
-        // 更新物品
         for(let i=items.length-1;i>=0;i--){
           const it = items[i];
           it.y += it.speed * dt;
 
-          // 掉地：扣命
+          // 掉地：不加不扣分（符合你的規則），但扣命維持遊戲結束機制
           if(it.y > vh - 18 - itemH/2){
             lives -= 1;
             updateHUD();
             removeItem(i);
-            onBadEvent();
+
             if(lives <= 0){
               gameOver();
               break;
@@ -962,23 +1147,25 @@
             continue;
           }
 
-          // 碰撞
+          // 接到：才加減分 + 粒子
           if(intersects(px, py, playerW, playerH, it.x, it.y, itemW, itemH)){
-            if(it.good){
+            if(it.kind === "diamond"){
               score += 10;
-              onGoodCatch(px, py);
+              onCatchDiamond(px, py);
+            }else if(it.kind === "bomb"){
+              score = Math.max(0, score - 25);
+              onCatchBomb(px, py);
             }else{
-              score = Math.max(0, score - 8);
-              lives -= 1;
-              onBadEvent();
+              // 三種水果（合計 40%）
+              // 你可依水果微調：蘋果+2、香蕉+4、葡萄+3
+              if(it.kind === "apple")  score += 2;
+              if(it.kind === "banana") score += 4;
+              if(it.kind === "grape")  score += 3;
+              onCatchFruit();
             }
+
             updateHUD();
             removeItem(i);
-
-            if(lives <= 0){
-              gameOver();
-              break;
-            }
             continue;
           }
 
@@ -995,6 +1182,7 @@
     btnRestartTop.addEventListener("click", resetGame);
     btnRestart.addEventListener("click", resetGame);
     btnShare.addEventListener("click", ()=> shareScore(score));
+    btnShot.addEventListener("click", captureResultCard);
 
     /**********************
      *  Resize
@@ -1009,13 +1197,18 @@
      *  Init
      **********************/
     (async function boot(){
+      preloadAvatars();
+      pickRandomAvatar();
+
+      applyTheme(stageIndex);
+
       renderLeaderboard(loadLeaderboard());
       setPlayerX(playerX);
+
       initLIFF();
       updateHUD();
       refreshAudioUi();
 
-      // iOS/Safari：BGM 會在第一次觸控/拖曳時開始（pointerDown）
       requestAnimationFrame(tick);
     })();
   </script>
