@@ -22,7 +22,7 @@
       /* JS 會寫入：實際可視高度 */
       --vh: 1vh;
 
-      /* 底部安全區（iPhone Home indicator） */
+      /* iPhone safe area */
       --safeB: env(safe-area-inset-bottom);
       --safeT: env(safe-area-inset-top);
     }
@@ -36,7 +36,7 @@
       touch-action:none;
     }
 
-    /* ✅ 核心：用實際可視高度（避免被底部工具列擋住） */
+    /* ✅ 用可視高度，避免底部工具列遮住 */
     #game{
       position:relative;
       width:100vw;
@@ -45,20 +45,20 @@
       height: 100svh;
       overflow:hidden;
       padding-bottom: var(--safeB);
-      box-sizing: border-box;
+      box-sizing:border-box;
     }
 
     /* HUD */
     #hud{
       position:absolute;
       top: calc(14px + var(--safeT));
-      left: 14px;
-      right: 14px;
+      left:14px;
+      right:14px;
       display:flex;
       align-items:center;
       justify-content:space-between;
       gap:10px;
-      z-index: 10;
+      z-index:10;
       pointer-events:none;
       flex-wrap:wrap;
     }
@@ -140,7 +140,6 @@
     /* Player */
     #player{
       position:absolute;
-      /* ✅ 底部加入 safe area，避免被工具列/安全區遮擋 */
       bottom: calc(22px + var(--safeB));
       left:50%;
       transform:translateX(-50%);
@@ -222,10 +221,9 @@
     #ground{
       position:absolute;
       left:0; right:0;
-      /* ✅ ground 貼在可視底部上方 */
       bottom: var(--safeB);
-      height: 18px;
-      background: rgba(0,0,0,.05);
+      height:18px;
+      background:rgba(0,0,0,.05);
       z-index:1;
     }
 
@@ -323,7 +321,7 @@
       <div class="pill small" id="stagePill">第 1 關｜莓果主題</div>
 
       <div class="pill small" id="scorePill">分數：<span id="score">0</span></div>
-      <div class="pill small" id="lifePill">命：<span id="lives">3</span> ❤️</div>
+      <div class="pill small" id="lifePill">命：<span id="lives">5</span> ❤️</div>
 
       <div class="pill small" id="audioPill" title="音效/音樂設定">
         <button class="toggleBtn" id="btnBgmToggle">🎵 BGM：開</button>
@@ -367,14 +365,8 @@
   </div>
 
   <script>
-    /**********************
-     *  設定：LIFF ID
-     **********************/
     const LIFF_ID = "2008845314-CxfyQ0o5";
 
-    /**********************
-     *  DOM
-     **********************/
     const game = document.getElementById("game");
     const playerEl = document.getElementById("player");
     const playerAvatarEl = document.getElementById("playerAvatar");
@@ -401,27 +393,30 @@
     const sfxVolEl = document.getElementById("sfxVol");
 
     /**********************
-     *  ✅ 修正：可視高度與 safe area
+     *  ✅ 可視高度（避免底部被擋）
      **********************/
     let vw = window.innerWidth;
-    let vh = window.innerHeight; // 會被 updateViewport() 覆蓋為「可視高度」
+    let vh = window.innerHeight;
 
     function getVisibleHeight(){
-      // iOS Safari / LINE 內建瀏覽器：visualViewport 更準
       if (window.visualViewport && typeof window.visualViewport.height === "number") {
         return window.visualViewport.height;
       }
       return window.innerHeight;
     }
 
+    let safeBpx = 0;
+    function updateSafeAreaPx(){
+      const v = getComputedStyle(document.documentElement).getPropertyValue("--safeB").trim();
+      const n = parseFloat(v);
+      safeBpx = Number.isFinite(n) ? n : 0;
+    }
+
     function updateViewport(){
       vw = window.innerWidth;
       vh = getVisibleHeight();
-
-      // 寫入 CSS 變數，讓 #game 高度跟著可視高度走
       document.documentElement.style.setProperty("--vh", `${vh * 0.01}px`);
-
-      // 重新套用玩家位置（避免視窗高度變化造成錯位）
+      updateSafeAreaPx();
       setPlayerX(playerX);
     }
 
@@ -442,7 +437,7 @@
     const itemH = 54;
 
     let score = 0;
-    let lives = 3;
+    let lives = 5; // ✅ 生命 5 條
 
     let running = true;
     let lastSpawn = 0;
@@ -765,18 +760,20 @@
     }
 
     /**********************
-     *  物品：5 種（鑽石 30%、炸彈 30%、水果合計 40%）
+     *  物品機率：鑽石 30%、炸彈 20%、水果自動平衡（剩 50% 平均）
      **********************/
     function spawnItem(){
       const el = document.createElement("div");
       el.className = "item";
 
+      const pDiamond = 0.30;
+      const pBomb = 0.20;
       const r = Math.random();
-      let kind = "";
 
-      if(r < 0.30){
+      let kind = "";
+      if(r < pDiamond){
         kind = "diamond";
-      }else if(r < 0.60){
+      }else if(r < pDiamond + pBomb){
         kind = "bomb";
       }else{
         const others = ["apple","banana","grape"];
@@ -812,7 +809,7 @@
     }
 
     /**********************
-     *  排行榜（本機）
+     *  排行榜
      **********************/
     const LB_KEY = "alulu_catch_lb_v1";
 
@@ -855,7 +852,7 @@
     }
 
     /**********************
-     *  LIFF 初始化（抓名字）
+     *  LIFF 初始化
      **********************/
     async function initLIFF(){
       try{
@@ -951,14 +948,14 @@
               files: [file]
             });
           }
-        }catch(e){ /* 取消/不支援就忽略 */ }
+        }catch(e){ }
       }catch(e){
         shareHintEl.textContent = "截圖失敗：請再試一次。";
       }
     }
 
     /**********************
-     *  玩家控制（只做 translateX）
+     *  玩家控制
      **********************/
     let dragging = false;
     let dragOffsetX = 0;
@@ -1030,7 +1027,7 @@
     });
 
     /**********************
-     *  接到事件（粒子不影響座標）
+     *  接到事件
      **********************/
     function onCatchDiamond(px, py){
       const now = performance.now();
@@ -1063,19 +1060,15 @@
 
     function gameOver(){
       running = false;
-
       finalScoreEl.textContent = `分數：${score}`;
       shareHintEl.textContent = "";
-
       const list = addToLeaderboard(playerName, score);
       renderLeaderboard(list);
-
       overlay.style.display = "flex";
     }
 
     function resetGame(){
       for(let i=items.length-1;i>=0;i--) removeItem(i);
-
       for(let i=sparks.length-1;i>=0;i--){
         const p = sparks[i];
         if(p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
@@ -1083,7 +1076,7 @@
       }
 
       score = 0;
-      lives = 3;
+      lives = 5; // ✅ 重開也是 5 條
       combo = 0;
       lastGoodTs = 0;
 
@@ -1129,17 +1122,14 @@
         }
 
         const px = playerX - playerW/2;
+        const py = vh - (22 + safeBpx) - playerH;
 
-        // ✅ 重要：用「可視高度 vh」算 player 的 y
-        const py = vh - (22) - playerH - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safeB")) || 0);
+        const groundY = vh - 18 - safeBpx;
 
         for(let i=items.length-1;i>=0;i--){
           const it = items[i];
           it.y += it.speed * dt;
 
-          // 掉地：底部以 ground 的上緣為準（可視高度 - safeB - ground）
-          const safeBpx = (window.visualViewport ? 0 : 0); // 這裡不硬算，用 CSS 控制 ground 位置
-          const groundY = vh - 18; // 以可視高度的底部當基準（已在 CSS 讓 ground 往上避 safeB）
           if(it.y > groundY - itemH/2){
             lives -= 1;
             updateHUD();
@@ -1164,7 +1154,6 @@
               if(it.kind === "grape")  score += 3;
               onCatchFruit();
             }
-
             updateHUD();
             removeItem(i);
             continue;
@@ -1189,7 +1178,7 @@
      *  Init
      **********************/
     (async function boot(){
-      updateViewport();     // ✅ 先校正可視高度
+      updateViewport();
       preloadAvatars();
       pickRandomAvatar();
 
