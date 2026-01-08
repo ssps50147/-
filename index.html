@@ -18,7 +18,15 @@
       --card:#ffffffcc;
       --text:#111;
       --themeGlow: rgba(255,120,190,.65);
+
+      /* JS 會寫入：實際可視高度 */
+      --vh: 1vh;
+
+      /* 底部安全區（iPhone Home indicator） */
+      --safeB: env(safe-area-inset-bottom);
+      --safeT: env(safe-area-inset-top);
     }
+
     html,body{
       height:100%;
       margin:0;
@@ -28,22 +36,29 @@
       touch-action:none;
     }
 
+    /* ✅ 核心：用實際可視高度（避免被底部工具列擋住） */
     #game{
       position:relative;
       width:100vw;
-      height:100vh;
+      height: calc(var(--vh) * 100);
+      height: 100dvh;
+      height: 100svh;
       overflow:hidden;
+      padding-bottom: var(--safeB);
+      box-sizing: border-box;
     }
 
     /* HUD */
     #hud{
       position:absolute;
-      top:14px; left:14px; right:14px;
+      top: calc(14px + var(--safeT));
+      left: 14px;
+      right: 14px;
       display:flex;
       align-items:center;
       justify-content:space-between;
       gap:10px;
-      z-index:10;
+      z-index: 10;
       pointer-events:none;
       flex-wrap:wrap;
     }
@@ -62,11 +77,7 @@
       user-select:none;
       -webkit-user-select:none;
     }
-
-    .pill.small{
-      font-weight:700;
-      padding:10px 12px;
-    }
+    .pill.small{ font-weight:700; padding:10px 12px; }
 
     #titlePill{
       max-width:46vw;
@@ -74,7 +85,6 @@
       overflow:hidden;
       text-overflow:ellipsis;
     }
-
     #welcomePill{
       flex:1;
       justify-content:flex-start;
@@ -122,21 +132,16 @@
       font-size:13px;
       opacity:.95;
     }
-    input[type="range"]{
-      width:110px;
-      accent-color:#111;
-    }
+    input[type="range"]{ width:110px; accent-color:#111; }
 
     /* Stage pill */
-    #stagePill{
-      pointer-events:auto;
-      font-weight: 900;
-    }
+    #stagePill{ pointer-events:auto; font-weight:900; }
 
     /* Player */
     #player{
       position:absolute;
-      bottom:22px;
+      /* ✅ 底部加入 safe area，避免被工具列/安全區遮擋 */
+      bottom: calc(22px + var(--safeB));
       left:50%;
       transform:translateX(-50%);
       width:78px;
@@ -152,7 +157,6 @@
       z-index:3;
       will-change:transform;
     }
-
     #playerAvatar{
       width:66px;
       height:66px;
@@ -178,7 +182,7 @@
       z-index:2;
     }
 
-    /* 水果主題光暈（不影響座標） */
+    /* 水果主題光暈 */
     .item.fruit{
       border-radius:16px;
       background: rgba(255,255,255,.10);
@@ -217,9 +221,11 @@
     /* Ground */
     #ground{
       position:absolute;
-      bottom:0; left:0; right:0;
-      height:18px;
-      background:rgba(0,0,0,.05);
+      left:0; right:0;
+      /* ✅ ground 貼在可視底部上方 */
+      bottom: var(--safeB);
+      height: 18px;
+      background: rgba(0,0,0,.05);
       z-index:1;
     }
 
@@ -232,7 +238,8 @@
       z-index:999;
       align-items:center;
       justify-content:center;
-      padding:18px;
+      padding: calc(18px + var(--safeT)) 18px calc(18px + var(--safeB));
+      box-sizing:border-box;
     }
     #gameoverCard{
       width:min(520px, 92vw);
@@ -318,16 +325,11 @@
       <div class="pill small" id="scorePill">分數：<span id="score">0</span></div>
       <div class="pill small" id="lifePill">命：<span id="lives">3</span> ❤️</div>
 
-      <!-- 音效 / BGM -->
       <div class="pill small" id="audioPill" title="音效/音樂設定">
         <button class="toggleBtn" id="btnBgmToggle">🎵 BGM：開</button>
         <button class="toggleBtn" id="btnSfxToggle">🫧 音效：開</button>
-        <div class="rangeWrap">BGM
-          <input id="bgmVol" type="range" min="0" max="100" value="22" />
-        </div>
-        <div class="rangeWrap">SFX
-          <input id="sfxVol" type="range" min="0" max="100" value="35" />
-        </div>
+        <div class="rangeWrap">BGM <input id="bgmVol" type="range" min="0" max="100" value="22" /></div>
+        <div class="rangeWrap">SFX <input id="sfxVol" type="range" min="0" max="100" value="35" /></div>
       </div>
 
       <button id="btnRestartTop" title="重新開始">重新開始</button>
@@ -339,7 +341,6 @@
 
     <div id="ground"></div>
 
-    <!-- Game Over -->
     <div id="gameover">
       <div id="gameoverCard">
         <div id="gameoverTitle">Game Over</div>
@@ -394,18 +395,45 @@
     const btnShare = document.getElementById("btnShare");
     const btnShot = document.getElementById("btnShot");
 
-    // 音效UI
     const btnBgmToggle = document.getElementById("btnBgmToggle");
     const btnSfxToggle = document.getElementById("btnSfxToggle");
     const bgmVolEl = document.getElementById("bgmVol");
     const sfxVolEl = document.getElementById("sfxVol");
 
     /**********************
-     *  遊戲狀態
+     *  ✅ 修正：可視高度與 safe area
      **********************/
     let vw = window.innerWidth;
-    let vh = window.innerHeight;
+    let vh = window.innerHeight; // 會被 updateViewport() 覆蓋為「可視高度」
 
+    function getVisibleHeight(){
+      // iOS Safari / LINE 內建瀏覽器：visualViewport 更準
+      if (window.visualViewport && typeof window.visualViewport.height === "number") {
+        return window.visualViewport.height;
+      }
+      return window.innerHeight;
+    }
+
+    function updateViewport(){
+      vw = window.innerWidth;
+      vh = getVisibleHeight();
+
+      // 寫入 CSS 變數，讓 #game 高度跟著可視高度走
+      document.documentElement.style.setProperty("--vh", `${vh * 0.01}px`);
+
+      // 重新套用玩家位置（避免視窗高度變化造成錯位）
+      setPlayerX(playerX);
+    }
+
+    window.addEventListener("resize", updateViewport);
+    if (window.visualViewport){
+      window.visualViewport.addEventListener("resize", updateViewport);
+      window.visualViewport.addEventListener("scroll", updateViewport);
+    }
+
+    /**********************
+     *  遊戲狀態
+     **********************/
     let playerX = vw * 0.5;
     const playerW = 78;
     const playerH = 78;
@@ -426,7 +454,6 @@
     let playerName = "鹿粉";
     let inLIFF = false;
 
-    // combo：影響泡泡音高（僅在「接到鑽石」）
     let combo = 0;
     let lastGoodTs = 0;
 
@@ -456,7 +483,7 @@
       }
       currentAvatar = next;
       playerAvatarEl.src = currentAvatar;
-      resultAvatarEl.src = currentAvatar; // 結算同步
+      resultAvatarEl.src = currentAvatar;
     }
 
     /**********************
@@ -471,7 +498,7 @@
 
     let stageIndex = 0;
     let stageNum = 1;
-    const STAGE_DURATION = 18; // 每關秒數
+    const STAGE_DURATION = 18;
     let stageTimer = 0;
 
     function applyTheme(idx){
@@ -593,12 +620,11 @@
       osc.stop(t + 0.12);
     }
 
-    // 輕快休閒BGM
     const bgm = {
       bpm: 128,
       melody: [64, 67, 69, 71, 72, 71, 69, 67, 64, 67, 72, 74, 72, 71, 69, 67],
       bass:   [48, 48, 48, 48, 43, 43, 43, 43, 45, 45, 45, 45, 41, 41, 41, 41],
-      chord:  [60, 67, 69, 65] // C, G, Am, F
+      chord:  [60, 67, 69, 65]
     };
 
     function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
@@ -627,7 +653,7 @@
       ensureAudio();
       if(audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
 
-      const stepDur = 60 / bgm.bpm / 2; // 8分音符
+      const stepDur = 60 / bgm.bpm / 2;
       const step = audioState.bgmStep % 16;
       const now = audioCtx.currentTime;
       const startAt = now + 0.005;
@@ -667,7 +693,7 @@
     /**********************
      *  粒子（不影響座標）
      **********************/
-    const sparks = []; // {el,x,y,vx,vy,life,rot,vr,opacity,type}
+    const sparks = [];
 
     function spawnSparks(cx, cy, type = "star"){
       const count = (type === "star") ? 7 : 12;
@@ -739,7 +765,7 @@
     }
 
     /**********************
-     *  物品：5 種（鑽石 30%、炸彈 30%、其餘水果合計 40%）
+     *  物品：5 種（鑽石 30%、炸彈 30%、水果合計 40%）
      **********************/
     function spawnItem(){
       const el = document.createElement("div");
@@ -776,23 +802,17 @@
       items.push({ el, x, y, speed, kind });
     }
 
-    /**********************
-     *  碰撞
-     **********************/
     function intersects(ax, ay, aw, ah, bx, by, bw, bh){
       return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
     }
 
-    /**********************
-     *  HUD 更新
-     **********************/
     function updateHUD(){
       scoreEl.textContent = String(score);
       livesEl.textContent = String(lives);
     }
 
     /**********************
-     *  排行榜（本機 localStorage）
+     *  排行榜（本機）
      **********************/
     const LB_KEY = "alulu_catch_lb_v1";
 
@@ -800,9 +820,7 @@
       try{
         const raw = localStorage.getItem(LB_KEY);
         return raw ? JSON.parse(raw) : [];
-      }catch(e){
-        return [];
-      }
+      }catch(e){ return []; }
     }
     function saveLeaderboard(list){
       localStorage.setItem(LB_KEY, JSON.stringify(list));
@@ -933,17 +951,14 @@
               files: [file]
             });
           }
-        }catch(e){
-          // 使用者取消/環境不支援：忽略
-        }
+        }catch(e){ /* 取消/不支援就忽略 */ }
       }catch(e){
         shareHintEl.textContent = "截圖失敗：請再試一次。";
       }
     }
 
     /**********************
-     *  玩家控制：拖曳 / 觸控
-     *  （只做 translateX，不做跳動/縮放，避免回中）
+     *  玩家控制（只做 translateX）
      **********************/
     let dragging = false;
     let dragOffsetX = 0;
@@ -954,7 +969,6 @@
     }
 
     function pointerDown(e){
-      // 首次互動：啟用音訊 + 開始BGM（iOS限制）
       ensureAudio();
       if(audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
       if(audioState.bgmOn) startBgm();
@@ -1016,8 +1030,7 @@
     });
 
     /**********************
-     *  接到事件：只在「接到」時加減分
-     *  （掉地不改分數，但會扣命維持 Game Over）
+     *  接到事件（粒子不影響座標）
      **********************/
     function onCatchDiamond(px, py){
       const now = performance.now();
@@ -1027,16 +1040,13 @@
 
       const freq = 360 + Math.min(18, combo) * 28;
       playPop(freq);
-
       spawnSparks(px + playerW/2, py + 18, "star");
     }
-
     function onCatchBomb(px, py){
       combo = 0;
       playThunk();
       spawnSparks(px + playerW/2, py + 18, "boom");
     }
-
     function onCatchFruit(){
       combo = 0;
       playPop(460);
@@ -1064,10 +1074,8 @@
     }
 
     function resetGame(){
-      // 清物品
       for(let i=items.length-1;i>=0;i--) removeItem(i);
 
-      // 清粒子
       for(let i=sparks.length-1;i>=0;i--){
         const p = sparks[i];
         if(p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
@@ -1083,21 +1091,18 @@
       speedBase = 220;
       lastSpawn = 0;
 
-      // 關卡重置
       stageIndex = 0;
       stageNum = 1;
       stageTimer = 0;
       applyTheme(stageIndex);
 
-      // 本局鹿鹿頭貼
       pickRandomAvatar();
 
       running = true;
       overlay.style.display = "none";
       updateHUD();
 
-      vw = window.innerWidth;
-      vh = window.innerHeight;
+      updateViewport();
       setPlayerX(vw * 0.5);
     }
 
@@ -1109,37 +1114,36 @@
       updateSparks(dt);
 
       if(running){
-        // 關卡計時（換主題）
         stageTimer += dt;
         if(stageTimer >= STAGE_DURATION){
           stageTimer = 0;
           nextStage();
         }
 
-        // 生成物品
         if(ts - lastSpawn > spawnInterval){
           spawnItem();
           lastSpawn = ts;
 
-          // 逐漸加速（手感）
           spawnInterval = Math.max(380, spawnInterval - 10);
           speedBase = Math.min(520, speedBase + 2.2);
         }
 
-        // 玩家矩形（碰撞）
         const px = playerX - playerW/2;
-        const py = vh - 22 - playerH;
+
+        // ✅ 重要：用「可視高度 vh」算 player 的 y
+        const py = vh - (22) - playerH - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safeB")) || 0);
 
         for(let i=items.length-1;i>=0;i--){
           const it = items[i];
           it.y += it.speed * dt;
 
-          // 掉地：不加不扣分（符合你的規則），但扣命維持遊戲結束機制
-          if(it.y > vh - 18 - itemH/2){
+          // 掉地：底部以 ground 的上緣為準（可視高度 - safeB - ground）
+          const safeBpx = (window.visualViewport ? 0 : 0); // 這裡不硬算，用 CSS 控制 ground 位置
+          const groundY = vh - 18; // 以可視高度的底部當基準（已在 CSS 讓 ground 往上避 safeB）
+          if(it.y > groundY - itemH/2){
             lives -= 1;
             updateHUD();
             removeItem(i);
-
             if(lives <= 0){
               gameOver();
               break;
@@ -1147,7 +1151,6 @@
             continue;
           }
 
-          // 接到：才加減分 + 粒子
           if(intersects(px, py, playerW, playerH, it.x, it.y, itemW, itemH)){
             if(it.kind === "diamond"){
               score += 10;
@@ -1156,8 +1159,6 @@
               score = Math.max(0, score - 25);
               onCatchBomb(px, py);
             }else{
-              // 三種水果（合計 40%）
-              // 你可依水果微調：蘋果+2、香蕉+4、葡萄+3
               if(it.kind === "apple")  score += 2;
               if(it.kind === "banana") score += 4;
               if(it.kind === "grape")  score += 3;
@@ -1185,24 +1186,16 @@
     btnShot.addEventListener("click", captureResultCard);
 
     /**********************
-     *  Resize
-     **********************/
-    window.addEventListener("resize", ()=>{
-      vw = window.innerWidth;
-      vh = window.innerHeight;
-      setPlayerX(playerX);
-    });
-
-    /**********************
      *  Init
      **********************/
     (async function boot(){
+      updateViewport();     // ✅ 先校正可視高度
       preloadAvatars();
       pickRandomAvatar();
 
       applyTheme(stageIndex);
-
       renderLeaderboard(loadLeaderboard());
+
       setPlayerX(playerX);
 
       initLIFF();
