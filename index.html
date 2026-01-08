@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>阿鹿鹿接接樂</title>
 
-  <!-- LIFF SDK -->
+  <!-- LIFF SDK（保留：抓名字用；已移除分享功能） -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
   <!-- 結算卡截圖工具 -->
@@ -19,10 +19,7 @@
       --text:#111;
       --themeGlow: rgba(255,120,190,.65);
 
-      /* JS 會寫入：實際可視高度 */
       --vh: 1vh;
-
-      /* iPhone safe area */
       --safeB: env(safe-area-inset-bottom);
       --safeT: env(safe-area-inset-top);
     }
@@ -36,7 +33,7 @@
       touch-action:none;
     }
 
-    /* ✅ 用可視高度，避免底部工具列遮住 */
+    /* ✅ 可視高度（避免 iPhone/LINE 底部工具列遮住） */
     #game{
       position:relative;
       width:100vw;
@@ -62,7 +59,6 @@
       pointer-events:none;
       flex-wrap:wrap;
     }
-
     .pill{
       pointer-events:auto;
       background:var(--card);
@@ -134,7 +130,6 @@
     }
     input[type="range"]{ width:110px; accent-color:#111; }
 
-    /* Stage pill */
     #stagePill{ pointer-events:auto; font-weight:900; }
 
     /* Player */
@@ -280,11 +275,12 @@
     .btn.primary{ background:#111; color:#fff; }
     .btn.secondary{ background:#fff; border:1px solid #ddd; color:#111; }
 
-    #shareHint{
+    /* ✅ 只留截圖提示文字 */
+    #shotHint{
       font-size:12px;
-      opacity:.85;
+      opacity:.8;
       margin-top:2px;
-      word-break:break-word;
+      line-height:1.4;
     }
 
     /* Leaderboard */
@@ -349,11 +345,11 @@
 
         <div id="finalScore">分數：0</div>
 
-        <button class="btn primary" id="btnShare">分享成績到 LINE</button>
+        <!-- ✅ 只留截圖 -->
         <button class="btn secondary" id="btnShot">📸 結算卡一鍵截圖存相簿</button>
         <button class="btn secondary" id="btnRestart">重新開始</button>
 
-        <div id="shareHint"></div>
+        <div id="shotHint"></div>
 
         <div id="lb">
           <div id="lbTitle">🏆 排行榜（本機）</div>
@@ -365,7 +361,7 @@
   </div>
 
   <script>
-    const LIFF_ID = "2008845314-CxfyQ0o5";
+    const LIFF_ID = "2008833499-jzAWlBAJ";
 
     const game = document.getElementById("game");
     const playerEl = document.getElementById("player");
@@ -379,13 +375,13 @@
 
     const overlay = document.getElementById("gameover");
     const finalScoreEl = document.getElementById("finalScore");
-    const shareHintEl = document.getElementById("shareHint");
     const gameoverCardEl = document.getElementById("gameoverCard");
 
     const btnRestartTop = document.getElementById("btnRestartTop");
     const btnRestart = document.getElementById("btnRestart");
-    const btnShare = document.getElementById("btnShare");
     const btnShot = document.getElementById("btnShot");
+
+    const shotHintEl = document.getElementById("shotHint");
 
     const btnBgmToggle = document.getElementById("btnBgmToggle");
     const btnSfxToggle = document.getElementById("btnSfxToggle");
@@ -437,7 +433,7 @@
     const itemH = 54;
 
     let score = 0;
-    let lives = 5; // ✅ 生命 5 條
+    let lives = 5;
 
     let running = true;
     let lastSpawn = 0;
@@ -449,6 +445,7 @@
     let playerName = "鹿粉";
     let inLIFF = false;
 
+    // combo：只影響鑽石泡泡音高
     let combo = 0;
     let lastGoodTs = 0;
 
@@ -482,7 +479,7 @@
     }
 
     /**********************
-     *  水果主題（關卡感）
+     *  水果顏色主題輪替（關卡感）
      **********************/
     const THEMES = [
       { name:"莓果主題",  bg1:"#ffd6e7", bg2:"#fff4f9", glow:"rgba(255,120,190,.65)" },
@@ -509,14 +506,11 @@
       applyTheme(stageIndex);
     }
 
-    /**********************
-     *  工具
-     **********************/
     function rand(min, max){ return Math.random() * (max - min) + min; }
     function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
 
     /**********************
-     *  WebAudio：音效 + 輕快休閒BGM（合成）
+     *  WebAudio：泡泡音 + 輕快休閒BGM（合成）
      **********************/
     let audioCtx = null;
     const audioState = {
@@ -686,7 +680,7 @@
     }
 
     /**********************
-     *  粒子（不影響座標）
+     *  粒子
      **********************/
     const sparks = [];
 
@@ -760,7 +754,7 @@
     }
 
     /**********************
-     *  物品機率：鑽石 30%、炸彈 20%、水果自動平衡（剩 50% 平均）
+     *  物品機率：鑽石 25%、炸彈 25%、水果自動平衡（剩 50% 平均）
      **********************/
     function spawnItem(){
       const el = document.createElement("div");
@@ -809,7 +803,7 @@
     }
 
     /**********************
-     *  排行榜
+     *  排行榜（本機）
      **********************/
     const LB_KEY = "alulu_catch_lb_v1";
 
@@ -852,7 +846,7 @@
     }
 
     /**********************
-     *  LIFF 初始化
+     *  LIFF 初始化（僅抓名字）
      **********************/
     async function initLIFF(){
       try{
@@ -860,7 +854,7 @@
         inLIFF = true;
 
         if (!liff.isLoggedIn()) {
-          liff.login();
+          // 不強制登入，不影響遊玩
           return;
         }
 
@@ -880,39 +874,12 @@
     }
 
     /**********************
-     *  分享成績（文字）
-     **********************/
-    function buildShareText(score){
-      return `🦒 阿鹿鹿接接樂 成績出爐！\n鹿粉：${playerName}\n分數：${score}\n你也來挑戰看看～`;
-    }
-
-    async function shareScore(score){
-      const text = buildShareText(score);
-
-      if(!inLIFF || !window.liff || !liff.isInClient || !liff.isInClient()){
-        try{
-          await navigator.clipboard.writeText(text);
-          shareHintEl.textContent = "已複製分享文字～貼到 LINE/社群就可以！";
-        }catch(e){
-          shareHintEl.textContent = text;
-        }
-        return;
-      }
-
-      try{
-        await liff.sendMessages([{ type:"text", text }]);
-        shareHintEl.textContent = "已送出到聊天室～✅";
-      }catch(e){
-        shareHintEl.textContent = "分享失敗：可能尚未開啟 chat_message.write 權限，或不是在 LINE 內開啟。";
-      }
-    }
-
-    /**********************
-     *  結算卡截圖分享
+     *  ✅ 純截圖：不分享、不送出
+     *  目標：跳出 iOS 存圖介面 → 使用者點「儲存到照片」
      **********************/
     async function captureResultCard(){
       if(typeof html2canvas !== "function"){
-        shareHintEl.textContent = "截圖工具載入失敗（html2canvas 未載入）。";
+        shotHintEl.textContent = "截圖工具載入失敗（html2canvas 未載入）。";
         return;
       }
 
@@ -925,37 +892,40 @@
 
         const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png", 1.0));
         if(!blob){
-          shareHintEl.textContent = "截圖失敗（無法輸出圖片）。";
+          shotHintEl.textContent = "截圖失敗（無法輸出圖片）。";
           return;
         }
 
-        const file = new File([blob], `alulu-score-${Date.now()}.png`, { type:"image/png" });
-        const url = URL.createObjectURL(blob);
+        const fileName = `alulu-score-${Date.now()}.png`;
+        const file = new File([blob], fileName, { type:"image/png" });
 
-        shareHintEl.innerHTML = `
+        // ✅ 使用 share sheet 只用來「存到照片」流程（不帶文字/標題，不做分享文字）
+        if(navigator.canShare && navigator.canShare({ files:[file] })){
+          try{
+            await navigator.share({ files:[file] });
+            shotHintEl.textContent = "已開啟存圖介面：請選「儲存到照片」即可存入相簿 ✅";
+            return;
+          }catch(e){
+            // 使用者取消/不支援：走備援
+          }
+        }
+
+        // ✅ 備援：顯示圖片 + 下載（iPhone 可長按存相簿）
+        const url = URL.createObjectURL(blob);
+        shotHintEl.innerHTML = `
           <div style="margin-top:8px; display:flex; flex-direction:column; gap:8px; align-items:center;">
             <img src="${url}" alt="結算卡截圖" style="width:min(320px, 80vw); border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.12);" />
-            <a href="${url}" download="${file.name}" style="font-weight:900; text-decoration:none;">⬇️ 下載截圖</a>
-            <div style="font-size:12px; opacity:.75;">（iPhone 可長按圖片存到相簿）</div>
+            <a href="${url}" download="${fileName}" style="font-weight:900; text-decoration:none;">⬇️ 下載截圖</a>
+            <div style="font-size:12px; opacity:.75;">（iPhone：長按圖片 → 加到照片 / 儲存到相簿）</div>
           </div>
         `;
-
-        try{
-          if(navigator.canShare && navigator.canShare({ files:[file] })){
-            await navigator.share({
-              title: "阿鹿鹿接接樂 成績",
-              text: `我在阿鹿鹿接接樂拿到 ${score} 分！`,
-              files: [file]
-            });
-          }
-        }catch(e){ }
       }catch(e){
-        shareHintEl.textContent = "截圖失敗：請再試一次。";
+        shotHintEl.textContent = "截圖失敗：請再試一次。";
       }
     }
 
     /**********************
-     *  玩家控制
+     *  玩家控制（取消跳動；只左右移動）
      **********************/
     let dragging = false;
     let dragOffsetX = 0;
@@ -991,7 +961,7 @@
     window.addEventListener("touchcancel", pointerUp, {passive:false});
 
     /**********************
-     *  音效UI
+     *  音效 UI
      **********************/
     function refreshAudioUi(){
       btnBgmToggle.textContent = audioState.bgmOn ? "🎵 BGM：開" : "🎵 BGM：關";
@@ -1027,7 +997,7 @@
     });
 
     /**********************
-     *  接到事件
+     *  接到事件：鑽石星星 / 炸彈爆炸（不影響座標）
      **********************/
     function onCatchDiamond(px, py){
       const now = performance.now();
@@ -1060,10 +1030,13 @@
 
     function gameOver(){
       running = false;
+
       finalScoreEl.textContent = `分數：${score}`;
-      shareHintEl.textContent = "";
+      shotHintEl.textContent = "";
+
       const list = addToLeaderboard(playerName, score);
       renderLeaderboard(list);
+
       overlay.style.display = "flex";
     }
 
@@ -1076,7 +1049,7 @@
       }
 
       score = 0;
-      lives = 5; // ✅ 重開也是 5 條
+      lives = 5;
       combo = 0;
       lastGoodTs = 0;
 
@@ -1116,41 +1089,35 @@
         if(ts - lastSpawn > spawnInterval){
           spawnItem();
           lastSpawn = ts;
-
           spawnInterval = Math.max(380, spawnInterval - 10);
           speedBase = Math.min(520, speedBase + 2.2);
         }
 
         const px = playerX - playerW/2;
         const py = vh - (22 + safeBpx) - playerH;
-
         const groundY = vh - 18 - safeBpx;
 
         for(let i=items.length-1;i>=0;i--){
           const it = items[i];
           it.y += it.speed * dt;
 
+          // ✅ 沒接到：只有水果才扣命；鑽石/炸彈沒接到不扣命
           if(it.y > groundY - itemH/2){
-  // ✅ 沒接到：只有水果才扣命；鑽石/炸彈沒接到不扣命
-  const isFruit = (it.kind === "apple" || it.kind === "banana" || it.kind === "grape");
+            const isFruit = (it.kind === "apple" || it.kind === "banana" || it.kind === "grape");
+            if(isFruit){
+              lives -= 1;
+              updateHUD();
+              if(lives <= 0){
+                removeItem(i);
+                gameOver();
+                break;
+              }
+            }
+            removeItem(i);
+            continue;
+          }
 
-  if(isFruit){
-    lives -= 1;
-    updateHUD();
-
-    if(lives <= 0){
-      removeItem(i);
-      gameOver();
-      break;
-    }
-  }
-
-  // 不管是什麼物品，掉地都會消失（但鑽石/炸彈不扣命）
-  removeItem(i);
-  continue;
-}
-
-
+          // ✅ 接到才加減分
           if(intersects(px, py, playerW, playerH, it.x, it.y, itemW, itemH)){
             if(it.kind === "diamond"){
               score += 10;
@@ -1164,6 +1131,7 @@
               if(it.kind === "grape")  score += 3;
               onCatchFruit();
             }
+
             updateHUD();
             removeItem(i);
             continue;
@@ -1181,7 +1149,6 @@
      **********************/
     btnRestartTop.addEventListener("click", resetGame);
     btnRestart.addEventListener("click", resetGame);
-    btnShare.addEventListener("click", ()=> shareScore(score));
     btnShot.addEventListener("click", captureResultCard);
 
     /**********************
@@ -1206,9 +1173,3 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-
