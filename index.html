@@ -1131,15 +1131,25 @@
           it.y += it.speed * dt;
 
           if(it.y > groundY - itemH/2){
-            lives -= 1;
-            updateHUD();
-            removeItem(i);
-            if(lives <= 0){
-              gameOver();
-              break;
-            }
-            continue;
-          }
+  // ✅ 沒接到：只有水果才扣命；鑽石/炸彈沒接到不扣命
+  const isFruit = (it.kind === "apple" || it.kind === "banana" || it.kind === "grape");
+
+  if(isFruit){
+    lives -= 1;
+    updateHUD();
+
+    if(lives <= 0){
+      removeItem(i);
+      gameOver();
+      break;
+    }
+  }
+
+  // 不管是什麼物品，掉地都會消失（但鑽石/炸彈不扣命）
+  removeItem(i);
+  continue;
+}
+
 
           if(intersects(px, py, playerW, playerH, it.x, it.y, itemW, itemH)){
             if(it.kind === "diamond"){
@@ -1196,6 +1206,7 @@
   </script>
 </body>
 </html>
+
 
 
 
